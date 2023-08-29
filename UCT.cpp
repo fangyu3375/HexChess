@@ -1,23 +1,24 @@
-#include<iostream>
-#include<stdlib.h>
-#include<time.h>
-#include<vector>
-#include<algorithm>
-#include<limits.h>
-#include<math.h>
-#include<chrono>
-#include<string.h>
-using namespace std;
-const int SIZE = 11, CNT = 60;
-const double C = 0.6;
+#include <iostream>
+#include <stdlib.h>
+#include <time.h>
+#include <vector>
+#include <algorithm>
+#include <limits.h>
+#include <math.h>
+#include <chrono>
+#include <string.h>
+#include <queue>
 
-const int start=clock(), timeout = (int)(0.96*(double)CLOCKS_PER_SEC);
-bool isFirstPlayer;//为0蓝方，为1红方
-int board[SIZE][SIZE]={0}; //本方1，对方-1，空白0
-int disx[6]={-1,-1,0,1,1,0}, disy[6]={0,1,1,0,-1,-1};
-int vis[SIZE][SIZE];
-int visit[SIZE][SIZE];//判断谁赢的时候用
-int WhocanwinLast;
+using namespace std;
+
+const int SIZE = 11, CNT = 60;
+const double C = 0.6, TIMELIMIT = 0.96;
+const int start=clock(), timeout = (int)(TIMELIMIT*(double)CLOCKS_PER_SEC);
+
+bool isFirstPlayer;     // true为红方（连接上下边界），false为蓝方（连接左右边界）
+int board[SIZE][SIZE];  // 我方 1，对方 -1，无子0
+int dx[6] = {-1, -1, 0, 1, 1, 0}, dy[6] = {0, 1, 1, 0, -1, -1};  // 方向向量
+bool st[SIZE][SIZE];
 int number;
 int N;
 
@@ -27,7 +28,7 @@ struct Position {
 
 class MCTtree {
 public:      // API
-    MCTtree(int b[][11], Position, MCTtree*);
+    MCTtree(int[][SIZE], Position, MCTtree*);
     MCTtree* SelectMaxUCBNode();
     void Expand();
     void rollout();
@@ -37,38 +38,41 @@ public:     // getAttributes
     vector<MCTtree*>& getChild();
     double& getNi();
 
-private:
-    void backup(int);
+private:    // helper function
+    void Backpropagation(int);
     int get_available_pos(int avail_x[], int avail_y[]);
-    void cloneBoardTo(int copy[][SIZE]);
+    void cloneBoardTo(int [][SIZE]);
+    void CalculateUCB();
+    bool Judgement(int board[][SIZE]);
 
 private:    // Attributes
     MCTtree* parent;
-    vector<MCTtree*> child;
+    vector<MCTtree*> children;
     Position decision;
-    int selfboard[11][11];  //每个节点存一个棋盘
+    int selfboard[SIZE][SIZE];  //每个节点存一个棋盘
     double value;  //ucb v
     double ni;     //ucb ni;
     double ucb;
 };
 
 vector<MCTtree*>& MCTtree::getChild() {
-    return this->child;
+    return this->children;
 }
 
 double& MCTtree::getNi() {
     return this->ni;
 }
 
-MCTtree::MCTtree(int b[][11], Position pos, MCTtree* p)
+MCTtree::MCTtree(int b[][SIZE], Position pos, MCTtree* p)
     :parent(p), value(0), ni(0), ucb(INT_MAX), decision(pos) {
-    memcpy(selfboard, b, sizeof(int) * 11 * 11);
+    memcpy(selfboard, b, sizeof(int) * SIZE * SIZE);
 }
 
-
-void MCTtree::rollout()//模拟
+// 扩展（模拟走子）
+// 在该棋盘状态下随机走子，填满棋盘后判断胜负，反向更新参数
+void MCTtree::rollout()
 {  
-    int copy[11][11];
+    int copy[SIZE][SIZE];
     cloneBoardTo(copy);
 
     int avail_x[SIZE * SIZE], avail_y[SIZE * SIZE];
@@ -89,21 +93,14 @@ void MCTtree::rollout()//模拟
         cnt--;
     }
 
-    memset(visit, 0, sizeof visit);
+    bool redWin = Judgement(copy);
+    int score = (redWin ^ isFirstPlayer) ? 0 : 1;   // redWin和isFirstPlayer相同表示我方胜出
 
-    WhocanwinLast=0;
-    int f, ans = 0;
-    if(isFirstPlayer==1){
-        f=WhoCanWin1(copy);
-    }
-    else{
-        f=WhoCanWin2(copy);
-    }
-    if(f==1) ans++;
-
-    backup(ans);
+    Backpropagation(score);
 }
-void MCTtree::backup(int v)//回溯
+
+// 将结果反向传播，更新参数
+void MCTtree::Backpropagation(int v)
 {  
     N++;
     MCTtree* node=this;
@@ -114,40 +111,66 @@ void MCTtree::backup(int v)//回溯
     }
 }
 
+// 判断先手（红方）是否获胜
+bool MCTtree::Judgement(int board[][SIZE])
+{
+    int redValue = isFirstPlayer ? 1 : -1;   // 判断红方是board[][]中值为1的点还是-1的点
+
+    memset(st, false, sizeof st);
+    queue<Position> q; 
+    for (int i = 0; i < SIZE; ++i)
+        if (board[0][i] == redValue)
+            q.push({0, i}), st[0][i] = true;
+    
+    while (!q.empty()) {
+        auto t = q.front(); q.pop();
+        int x = t.x, y = t.y;
+        if (x == SIZE - 1) return true;
+        for (int i = 0; i < 6; ++i) {
+            int a = x + dx[i], b = y + dy[i];
+            if (a < 0 || a >= SIZE || b < 0 || b >= SIZE || st[a][b]) continue;
+            if (board[a][b] != redValue) continue;
+            q.push({a, b});
+            st[a][b] = true;
+        }
+    }
+
+    return false;
+}
+
+
+
 void MCTtree::Expand()
 {
     int avail_x[SIZE * SIZE], avail_y[SIZE * SIZE];
     int cnt = get_available_pos(avail_x, avail_y);
 
-    for(int i=0;i<cnt;i++){
+    for(int i = 0; i < cnt; i++){
         int x = avail_x[i], y = avail_y[i];
-        MCTtree* c=new MCTtree(selfboard, {x, y},this);
+        MCTtree* c = new MCTtree(selfboard, {x, y}, this);
         c->selfboard[x][y] = 1;
-        child.push_back(c);
+        children.push_back(c);
     }
-    int k=rand()%cnt;
-    child[k]->rollout();
+    int k = rand()%cnt;
+    children[k]->rollout();
 }
 
+// 返回 UCB 最大的孩子节点
 MCTtree* MCTtree::SelectMaxUCBNode()
 {
-    for(int i=0;i<this->child.size();i++){
-        if(child[i]->ni!=0){
-            child[i]->ucb=double(child[i]->value)/(child[i]->ni)+C*sqrt(log(N)/child[i]->ni);
-        }
-    }
-    int nb=0;
-    double maxx=0;
-    for(int i=0;i<child.size();i++){
-        if(maxx<child[i]->ucb){
-            nb=i;
-            maxx=child[i]->ucb;
-        }
-    }
-    return child[nb];
+    for (auto &child : this->children)
+        if (child->getNi() != 0)
+            child->CalculateUCB();
+
+    MCTtree* maxUCBChild = children[0];
+    for (auto &child : this->children)
+        if (child->ucb > maxUCBChild->ucb)
+            maxUCBChild = child;
+    
+    return maxUCBChild;
 }
 
-//得到当前棋局可走的合法位置表， 并返回个数
+// 得到当前棋局可走的合法位置表， 并返回个数
 int MCTtree::get_available_pos(int avail_x[], int avail_y[])
 {
     int cnt = 0;
@@ -161,87 +184,26 @@ int MCTtree::get_available_pos(int avail_x[], int avail_y[])
     return cnt;
 }	
 
-void MCTtree::cloneBoardTo(int copy[][SIZE])
-{
+void MCTtree::cloneBoardTo(int copy[][SIZE]) {
     memcpy(copy, selfboard, sizeof(int) * SIZE * SIZE);
-}	
+}
+
+void MCTtree::CalculateUCB() {
+    this->ucb = value / ni + C * sqrt(log(N) / ni);
+}
+
+
 Position MCTtree::getOptimalDecition()
 {
-    int res = 0, max_ni = 0;
-    for (int i = 0; i < this->child.size(); ++i)
-        if (this->child[i]->ni > max_ni)
-        {
-            max_ni = this->child[i]->ni;
-            res = i;
-        }
+    MCTtree* optimalChild = children[0];
+    for (auto &child : children)
+        if (child->ni > optimalChild->ni)
+            optimalChild = child;
         
-    return this->child[res]->decision;
+    return optimalChild->decision;
 }
 
-bool avail(int x, int y)
-{
-    if (x >= 0 && x < SIZE && y >= 0 && y < SIZE && !board[x][y]) return true;
-    return false;
-}
-
-//!!!!!!!!可以记录一下每个节点的最优的孩子   没用艹
-bool InTheHEX(int x,int y){
-	if(x>=0&&x<11&&y>=0&&y<11){
-		return true;
-	}
-	else 
-	return false;
-}
-
-void dfs1(int board[11][11],int x,int y){  
-    visit[x][y]=1;
-    if(board[x][y]==-1) return;
-	if(x==10) {
-	    WhocanwinLast=1;
-	    return;
-	}
-	for(int i=0;i<6;i++){
-		int newx=x+disx[i];
-		int newy=y+disy[i];
-		if(InTheHEX(newx,newy)&&visit[newx][newy]==0&&board[newx][newy]==1){
-			dfs1(board,newx,newy);
-		}
-	}
-}
-
-void dfs2(int board[11][11],int x,int y){
-    visit[x][y]=1;
-    if(board[x][y]==-1) return;
-	if(y==10) {
-	    WhocanwinLast=1;
-	    return;
-	}
-	for(int i=0;i<6;i++){
-		int newx=x+disx[i];
-		int newy=y+disy[i];
-		if(InTheHEX(newx,newy)&&visit[newx][newy]==0&&board[newx][newy]==1){
-			dfs2(board,newx,newy);
-		}
-	}
-}
-bool WhoCanWin2(int board[11][11]){   //后手判定胜负
-	for(int i=0;i<11;i++){
-		if(visit[i][0]==0&&board[i][0]==1){
-			dfs2(board,i,0);
-		}
-	}
-	return WhocanwinLast;
-}
-bool WhoCanWin1(int board[11][11]){   //先手判定胜负
-	for(int i=0;i<11;i++){
-		if(visit[0][i]==0&&board[0][i]==1){
-			dfs1(board,0,i);
-		}
-	}
-	return WhocanwinLast;
-}
-
-int main(void)
+int main()
 {
 #ifndef _BOTZONE_ONLINE
 	freopen("in.txt", "r", stdin);
@@ -257,7 +219,7 @@ int main(void)
     }
     cin >> x >> y;  if (x != -1) board[x][y] = -1;	//对方
     else {
-        cout << 1 << ' ' << 2 << endl;
+        cout << 1 << ' ' << 2 << endl;          //限制先手
         return 0;
     }
     //此时board[][]里存储的就是当前棋盘的所有棋子信息,x和y存的是对方最近一步下的棋
@@ -272,7 +234,7 @@ int main(void)
     {
         MCTtree *curNode = gameRoot;
         while (curNode->getChild().size() > 0) curNode = curNode->SelectMaxUCBNode();
-        if (curNode->getNi() <= CNT - 1) curNode->rollout();
+        if (curNode->getNi() <= CNT) curNode->rollout();
         else curNode->Expand();
     }
 
