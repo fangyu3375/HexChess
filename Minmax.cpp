@@ -9,6 +9,7 @@
 using namespace std;
 
 const int SIZE = 11, MAX_DEPTH = 5, MAX_BRANCH= 15, INF = 0x3f3f3f3f;
+const double C = 0.8;
 
 int board[SIZE][SIZE] = { 0 };//本方1，对方-1，空白0
 enum Player{Red, Blue};
@@ -79,7 +80,7 @@ double evalute() {
 
     // cout << minDist[0] << ' ' << minDist[1] << endl;
     if (minDist[0] == 0) return INF;
-    return (double)minDist[1] / minDist[0];
+    return C * minDist[1] - (1 - C) * minDist[0];
 }
 
 // 朴素版扩展
@@ -158,5 +159,6 @@ int main()
 
 	// 向平台输出决策结果
 	cout << bestAction.x << ' ' << bestAction.y << endl;
+    delete(gameRoot);
 	return 0;
 }
