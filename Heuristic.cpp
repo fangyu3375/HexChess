@@ -16,10 +16,16 @@ struct Position {
     int x, y;
 };
 
+Position Heuristic(int n, int x, int y) {
+	if (!isFirstPlayer && n == 1) return {7, 3};
+	
+}
+
 int main()
 {
 #ifndef _BOTZONE_ONLINE
 	freopen("in.txt", "r", stdin);
+	freopen("out.txt", "w", stdout);
 #endif // !_BOTZONE_ONLINE
 
 	int x, y, n;
@@ -39,9 +45,10 @@ int main()
 
     if(board[1][2] == 1) isFirstPlayer= true; // 我方为红方
 
-
+	//启发式规则
+	Position bestAction = Heuristic(n, x, y);
 
 	// 向平台输出决策结果
-	// cout << bestAction.x << ' ' << bestAction.y << endl;
+	cout << bestAction.x << ' ' << bestAction.y << endl;
 	return 0;
 }
