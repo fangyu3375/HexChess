@@ -184,15 +184,6 @@ bool avail(int x, int y)
     return false;
 }
 
-//!!!!!!!!可以记录一下每个节点的最优的孩子   没用艹
-bool InTheHEX(int x,int y){
-	if(x>=0&&x<11&&y>=0&&y<11){
-		return true;
-	}
-	else 
-	return false;
-}
-
 void dfs1(int board[11][11],int x,int y){  
     visit[x][y]=1;
     if(board[x][y]==-1) return;
